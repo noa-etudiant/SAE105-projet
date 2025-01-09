@@ -1,43 +1,51 @@
+import re
+
 def extraire_evenements_txt(fichier_txt):
     evenements = []
     
+    # Expressions régulières simplifiées pour tester
+    regex_heure = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})"  # Récupère l'horodatage
+    regex_tcp = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})\s+IP\s+(?P<ip_source>[\w\.-]+)\.(?P<port_source>\d+)\s+>\s+(?P<ip_dest>[\d\w\.-]+)\.(?P<port_dest>\d+):\s+Flags\s+\[.*\],\s+seq\s+\d+:\d+,\s+ack\s+\d+,\s+win\s+\d+,\s+options\s+\[.*\],\s+length\s+\d+"
+    regex_dns_query = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})\s+IP\s+(?P<ip_source>[\w\.-]+)\.(?P<port_source>\d+)\s+>\s+(?P<ip_dest>[\d\.]+)\.(?P<port_dest>\d+):\s+(?P<length>\d+)\+?\s(?P<type>PTR\?|A\?)\s(?P<domain>[\w\.-]+)"
+    
     try:
         with open(fichier_txt, 'r', encoding='utf-8') as f:
-            contenu = f.read()
-            evenements_bruts = contenu.split('BEGIN:VEVENT')[1:]
-            
-            for evenement_brut in evenements_bruts:
-                evenement = {}
-                
-                if 'SUMMARY:' in evenement_brut:
-                    evenement['Horodatage Unix'] = evenement_brut.split('SUMMARY:')[1].split('\n')[0].strip()
-                else:
-                    evenement['THorodatage Unix'] = "vide"
-                
-                if 'DTSTART:' in evenement_brut:
-                    evenement['Date_debut'] = evenement_brut.split('DTSTART:')[1].split('\n')[0].strip()
-                else:
-                    evenement['Date_debut'] = "vide"
-                
-                if 'DTEND:' in evenement_brut:
-                    evenement['Date_fin'] = evenement_brut.split('DTEND:')[1].split('\n')[0].strip()
-                else:
-                    evenement['Date_fin'] = "vide"
-                
-                if 'LOCATION:' in evenement_brut:
-                    lieux = evenement_brut.split('LOCATION:')[1].split('\n')[0].strip()
-                    evenement['Lieu'] = lieux if lieux else "vide"
-                else:
-                    evenement['Lieu'] = "vide"
-                
-                if 'DESCRIPTION:' in evenement_brut:
-                    description = evenement_brut.split('DESCRIPTION:')[1].split('\n')[0].strip()
-                    evenement['Description'] = description if description else "vide"
-                else:
-                    evenement['Description'] = "vide"
+            contenu = f.readlines()
 
-                evenements.append(evenement)
-    
+            # Vérification de la lecture du fichier
+            if not contenu:
+                print(f"Le fichier {fichier_txt} est vide.")
+                return evenements
+
+            # Affichage des 5 premières lignes du fichier pour vérifier la lecture
+            print("Aperçu des 5 premières lignes du fichier :")
+            for i in range(min(5, len(contenu))):
+                print(contenu[i])
+
+            # Traitement des lignes
+            for ligne in contenu:
+                ligne = ligne.strip()  # Supprimer les espaces en trop
+                print(f"Traitement de la ligne: '{ligne}'")  # Affichage de la ligne traitée
+
+                # Première étape : Essayer de capturer uniquement l'horodatage
+                match_heure = re.match(regex_heure, ligne)
+                if match_heure:
+                    print(f"Horodatage trouvé: {match_heure.group('horodatage')}")
+                
+                # Deuxième étape : Essayer de capturer un paquet TCP complet
+                match_tcp = re.match(regex_tcp, ligne)
+                if match_tcp:
+                    print(f"Match trouvé avec la regex TCP: {ligne}")
+                    evenement = match_tcp.groupdict()
+                    evenements.append(evenement)
+
+                # Troisième étape : Essayer de capturer une requête DNS
+                match_dns = re.match(regex_dns_query, ligne)
+                if match_dns:
+                    print(f"Match trouvé avec la regex DNS: {ligne}")
+                    evenement = match_dns.groupdict()
+                    evenements.append(evenement)
+
     except FileNotFoundError:
         print(f"Le fichier {fichier_txt} n'a pas été trouvé.")
     except Exception as e:
@@ -45,24 +53,18 @@ def extraire_evenements_txt(fichier_txt):
     
     return evenements
 
-def generer_csv(fichier_csv, evenements):
-    entetes = [u'Horodatage Unix', u'protocole (IP)', u'IP source et Port', u'IP destination et Port', u'Indicateurs TCP', u'Numéro de séquence', u'Numéro d acquittement', u'taille de la fenêtre', u'Longueur de la charge utile']
-    
-    with open(fichier_csv, 'w', encoding='utf-8') as f:
-        ligneEntete = ";".join(entetes) + "\n"
-        f.write(ligneEntete)
-        
-        for evenement in evenements:
-            ligne = f"{evenement.get('Titre', 'vide')};{evenement.get('Date_debut', 'vide')};{evenement.get('Date_fin', 'vide')};{evenement.get('Lieu', 'vide')};{evenement.get('Description', 'vide')}\n"
-            f.write(ligne)
 
 def main():
-    fichier_txt = 'fichier1000.txt'
-    fichier_csv = 'rapport.csv'
-    
+    fichier_txt = 'fichier1000.txt'  # Le nom du fichier texte avec les paquets réseau
     evenements = extraire_evenements_txt(fichier_txt)
-    generer_csv(fichier_csv, evenements)
-    print(f"Le fichier CSV '{fichier_csv}' a été créé avec succès.")
+    if evenements:
+        print(f"Nombre d'événements extraits: {len(evenements)}")
+        for evenement in evenements:
+            print(evenement)
+    else:
+        print("Aucun événement trouvé dans le fichier TXT.")
+
 
 if __name__ == "__main__":
     main()
+
