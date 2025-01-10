@@ -1,70 +1,73 @@
+import csv
 import re
+from datetime import datetime
 
-def extraire_evenements_txt(fichier_txt):
-    evenements = []
-    
-    # Expressions régulières simplifiées pour tester
-    regex_heure = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})"  # Récupère l'horodatage
-    regex_tcp = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})\s+IP\s+(?P<ip_source>[\w\.-]+)\.(?P<port_source>\d+)\s+>\s+(?P<ip_dest>[\d\w\.-]+)\.(?P<port_dest>\d+):\s+Flags\s+\[.*\],\s+seq\s+\d+:\d+,\s+ack\s+\d+,\s+win\s+\d+,\s+options\s+\[.*\],\s+length\s+\d+"
-    regex_dns_query = r"(?P<horodatage>\d{2}:\d{2}:\d{2}\.\d{6})\s+IP\s+(?P<ip_source>[\w\.-]+)\.(?P<port_source>\d+)\s+>\s+(?P<ip_dest>[\d\.]+)\.(?P<port_dest>\d+):\s+(?P<length>\d+)\+?\s(?P<type>PTR\?|A\?)\s(?P<domain>[\w\.-]+)"
-    
+def convert_to_unix_timestamp(time_str):
+    # Convertir l'horodatage en secondes Unix à partir de "HH:MM:SS.ssssss"
     try:
-        with open(fichier_txt, 'r', encoding='utf-8') as f:
-            contenu = f.readlines()
+        time_format = "%H:%M:%S.%f"
+        current_time = datetime.strptime(time_str, time_format)
+        epoch_time = datetime(1970, 1, 1)
+        delta = current_time - epoch_time
+        return delta.total_seconds()
+    except ValueError:
+        # Si le format ne correspond pas, retourner None
+        return None
 
-            # Vérification de la lecture du fichier
-            if not contenu:
-                print(f"Le fichier {fichier_txt} est vide.")
-                return evenements
-
-            # Affichage des 5 premières lignes du fichier pour vérifier la lecture
-            print("Aperçu des 5 premières lignes du fichier :")
-            for i in range(min(5, len(contenu))):
-                print(contenu[i])
-
-            # Traitement des lignes
-            for ligne in contenu:
-                ligne = ligne.strip()  # Supprimer les espaces en trop
-                print(f"Traitement de la ligne: '{ligne}'")  # Affichage de la ligne traitée
-
-                # Première étape : Essayer de capturer uniquement l'horodatage
-                match_heure = re.match(regex_heure, ligne)
-                if match_heure:
-                    print(f"Horodatage trouvé: {match_heure.group('horodatage')}")
-                
-                # Deuxième étape : Essayer de capturer un paquet TCP complet
-                match_tcp = re.match(regex_tcp, ligne)
-                if match_tcp:
-                    print(f"Match trouvé avec la regex TCP: {ligne}")
-                    evenement = match_tcp.groupdict()
-                    evenements.append(evenement)
-
-                # Troisième étape : Essayer de capturer une requête DNS
-                match_dns = re.match(regex_dns_query, ligne)
-                if match_dns:
-                    print(f"Match trouvé avec la regex DNS: {ligne}")
-                    evenement = match_dns.groupdict()
-                    evenements.append(evenement)
-
-    except FileNotFoundError:
-        print(f"Le fichier {fichier_txt} n'a pas été trouvé.")
-    except Exception as e:
-        print(f"Erreur lors de la lecture du fichier TXT : {e}")
+def parse_line(line):
+    # Utiliser des expressions régulières pour extraire les informations nécessaires
+    pattern = r"(\d{2}:\d{2}:\d{2}\.\d{6})\s+IP\s+([a-zA-Z0-9.-]+)(?:\.(\d+))?\s+>\s+([a-zA-Z0-9.-]+)(?:\.(\d+))?:"
+    match = re.search(pattern, line)
     
-    return evenements
+    if match:
+        timestamp = match.group(1)
+        source_ip = match.group(2)
+        dest_ip = match.group(4)
+        
+        # Convertir l'horodatage en Unix
+        unix_timestamp = convert_to_unix_timestamp(timestamp)
+        
+        if unix_timestamp is not None:
+            return unix_timestamp, source_ip, dest_ip
+    return None
 
+def pad_to_length(value, length=50):
+    # Ajouter des espaces pour que la chaîne ait une longueur d'au moins 'length'
+    return str(value).ljust(length)
 
-def main():
-    fichier_txt = 'fichier1000.txt'  # Le nom du fichier texte avec les paquets réseau
-    evenements = extraire_evenements_txt(fichier_txt)
-    if evenements:
-        print(f"Nombre d'événements extraits: {len(evenements)}")
-        for evenement in evenements:
-            print(evenement)
-    else:
-        print("Aucun événement trouvé dans le fichier TXT.")
+def replace_ssh_with_22(ip_address):
+    # Remplacer toutes les occurrences de '.ssh' par '.22' dans l'adresse IP
+    return ip_address.replace('.ssh', '.22')
 
+def replace_http_with_80(ip_address):
+    # Remplacer toutes les occurrences de '.http' par '.80' dans l'adresse IP
+    return ip_address.replace('.http', '.80')
 
-if __name__ == "__main__":
-    main()
+def process_file(input_file, output_file):
+    # Lire le fichier d'entrée et extraire les données
+    with open(input_file, 'r') as infile, open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+        csv_writer = csv.writer(outfile, delimiter=';')  # Utilisation du point-virgule comme séparateur
+        csv_writer.writerow(['Horodatage Unix', 'IP Source', 'IP Destination'])  # En-têtes de colonnes modifiées
 
+        for line in infile:
+            result = parse_line(line)
+            if result:
+                # Appliquer un "padding" de 50 caractères pour toutes les colonnes
+                # Remplacer ".ssh" par ".22" et ".http" par ".80" dans les adresses IP source et destination
+                source_ip = replace_http_with_80(replace_ssh_with_22(result[1]))
+                dest_ip = replace_http_with_80(replace_ssh_with_22(result[2]))
+                
+                # Construire la ligne avec le padding et les adresses IP modifiées
+                padded_result = [
+                    pad_to_length(result[0], 50),  # Horodatage Unix
+                    pad_to_length(source_ip, 50),  # IP Source avec remplacement
+                    pad_to_length(dest_ip, 50)     # IP Destination avec remplacement
+                ]
+                csv_writer.writerow(padded_result)
+
+# Spécifiez les fichiers d'entrée et de sortie
+input_file = 'trame.txt'  # Remplacez par le chemin réel de votre fichier
+output_file = 'trame.csv'  # Le fichier CSV de sortie
+
+# Traitez le fichier
+process_file(input_file, output_file)
