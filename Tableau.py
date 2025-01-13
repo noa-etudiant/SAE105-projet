@@ -1,5 +1,7 @@
 import csv
 import re
+import matplotlib.pyplot as plt
+from collections import Counter
 from datetime import datetime
 
 def convert_to_unix_timestamp(time_str):
@@ -44,6 +46,9 @@ def replace_http_with_80(ip_address):
     return ip_address.replace('.http', '.80')
 
 def process_file(input_file, output_file):
+    source_ips = []
+    dest_ips = []
+    
     # Lire le fichier d'entrée et extraire les données
     with open(input_file, 'r') as infile, open(output_file, 'w', newline='', encoding='utf-8') as outfile:
         csv_writer = csv.writer(outfile, delimiter=';')  # Utilisation du point-virgule comme séparateur
@@ -57,6 +62,10 @@ def process_file(input_file, output_file):
                 source_ip = replace_http_with_80(replace_ssh_with_22(result[1]))
                 dest_ip = replace_http_with_80(replace_ssh_with_22(result[2]))
                 
+                # Ajouter les adresses IP source et destination pour les comptages
+                source_ips.append(source_ip)
+                dest_ips.append(dest_ip)
+
                 # Construire la ligne avec le padding et les adresses IP modifiées
                 padded_result = [
                     pad_to_length(result[0], 50),  # Horodatage Unix
@@ -64,6 +73,36 @@ def process_file(input_file, output_file):
                     pad_to_length(dest_ip, 50)     # IP Destination avec remplacement
                 ]
                 csv_writer.writerow(padded_result)
+    
+    # Créer les graphiques après avoir traité les lignes
+    create_graphs(source_ips, dest_ips)
+
+def create_graphs(source_ips, dest_ips):
+    # Compter les occurrences des adresses IP source et destination
+    source_ip_counts = Counter(source_ips)
+    dest_ip_counts = Counter(dest_ips)
+    
+    # Créer un graphique pour les IP source
+    plt.figure(figsize=(12, 8))  # Augmenter la taille de la figure
+    plt.bar(source_ip_counts.keys(), source_ip_counts.values(), color='blue')
+    plt.xlabel('IP Source')
+    plt.ylabel('Occurrences')
+    plt.title('Occurrences des IP Source')
+    plt.xticks(rotation=90)  # Rotation des labels de l'axe X à 90°
+    plt.tight_layout()  # Ajuste la mise en page pour éviter les chevauchements
+    plt.savefig('source_ip_occurrences.png')
+    plt.clf()
+
+    # Créer un graphique pour les IP destination
+    plt.figure(figsize=(12, 8))  # Augmenter la taille de la figure
+    plt.bar(dest_ip_counts.keys(), dest_ip_counts.values(), color='red')
+    plt.xlabel('IP Destination')
+    plt.ylabel('Occurrences')
+    plt.title('Occurrences des IP Destination')
+    plt.xticks(rotation=90)  # Rotation des labels de l'axe X à 90°
+    plt.tight_layout()  # Ajuste la mise en page pour éviter les chevauchements
+    plt.savefig('destination_ip_occurrences.png')
+    plt.clf()
 
 # Spécifiez les fichiers d'entrée et de sortie
 input_file = 'trame.txt'  # Remplacez par le chemin réel de votre fichier
