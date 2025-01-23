@@ -1,6 +1,50 @@
 import os
 import csv
 import re
+import sys
+import subprocess
+import importlib
+
+# Liste des bibliothèques requises
+REQUIRED_LIBRARIES = [
+    'matplotlib',
+    'collections',  # Note: collections est un module standard de Python
+]
+
+def check_and_install_libraries():
+    """
+    Vérifie si les bibliothèques requises sont installées.
+    Si une bibliothèque est manquante, tente de l'installer via pip.
+    """
+    missing_libraries = []
+
+    for lib in REQUIRED_LIBRARIES:
+        try:
+            # Pour les modules standard comme collections, on passe
+            if lib == 'collections':
+                continue
+            
+            # Tente d'importer la bibliothèque
+            importlib.import_module(lib)
+        except ImportError:
+            missing_libraries.append(lib)
+
+    # Installation des bibliothèques manquantes
+    if missing_libraries:
+        print("Bibliothèques manquantes détectées. Tentative d'installation...")
+        
+        try:
+            for lib in missing_libraries:
+                subprocess.check_call([sys.executable, '-m', 'pip', 'install', lib])
+                print(f"{lib} installée avec succès.")
+        except subprocess.CalledProcessError:
+            print(f"Erreur lors de l'installation des bibliothèques : {missing_libraries}")
+            print("Veuillez les installer manuellement avec 'pip install <nom_bibliotheque>'")
+            sys.exit(1)
+
+# Appel de la fonction de vérification des bibliothèques avant l'exécution principale
+check_and_install_libraries()
+
 import matplotlib.pyplot as plt
 from collections import Counter
 from datetime import datetime
@@ -52,17 +96,15 @@ def replace_http_with_80(ip_address):
 def detect_vulnerabilities(source_ips, dest_ips):
     vulnerabilities = []
     
-    # Exemple simple: Détection des connexions sur le port SSH (22) ou HTTP (80)
     ssh_attempts = [ip for ip in dest_ips if ".22" in ip]
     http_attempts = [ip for ip in dest_ips if ".80" in ip]
     
-    if len(ssh_attempts) > 10:  # Par exemple, plus de 10 tentatives de connexion SSH
+    if len(ssh_attempts) > 5:
         vulnerabilities.append("Tentatives multiples de connexion sur le port SSH détectées.")
     
-    if len(http_attempts) > 20:  # Plus de 20 tentatives sur le port HTTP
+    if len(http_attempts) > 5:
         vulnerabilities.append("Tentatives multiples de connexion sur le port HTTP détectées.")
     
-    # Vous pouvez ajouter d'autres critères de vulnérabilité ici selon vos besoins
     return vulnerabilities
 
 # Fonction pour traiter le fichier et générer un fichier CSV avec les données
@@ -71,8 +113,8 @@ def process_file(input_file_path, output_file_path):
     dest_ips = []
 
     with open(input_file_path, 'r', encoding='utf-8') as infile, open(output_file_path, 'w', newline='', encoding='utf-8') as outfile:
-        csv_writer = csv.writer(outfile, delimiter=';')  # Utilisation du point-virgule comme séparateur
-        csv_writer.writerow(['Horodatage Unix', 'IP Source', 'IP Destination'])  # En-têtes de colonnes
+        csv_writer = csv.writer(outfile, delimiter=';')
+        csv_writer.writerow(['Horodatage Unix', 'IP Source', 'IP Destination'])
 
         for line in infile:
             result = parse_line(line)
@@ -90,10 +132,8 @@ def process_file(input_file_path, output_file_path):
                 ]
                 csv_writer.writerow(padded_result)
 
-    # Créer les graphiques après avoir traité les lignes
     create_graphs(source_ips, dest_ips)
-    
-    # Analyser les vulnérabilités
+    check_graph_files()
     vulnerabilities = detect_vulnerabilities(source_ips, dest_ips)
     return vulnerabilities
 
@@ -102,7 +142,6 @@ def create_graphs(source_ips, dest_ips):
     source_ip_counts = Counter(source_ips)
     dest_ip_counts = Counter(dest_ips)
 
-    # Graphique des IP source
     plt.figure(figsize=(12, 8))
     plt.bar(source_ip_counts.keys(), source_ip_counts.values(), color='green')
     plt.xlabel('IP Source')
@@ -113,7 +152,6 @@ def create_graphs(source_ips, dest_ips):
     plt.savefig(os.path.join(RESULT_FOLDER, 'source_ip_occurrences.png'))
     plt.clf()
 
-    # Graphique des IP destination
     plt.figure(figsize=(12, 8))
     plt.bar(dest_ip_counts.keys(), dest_ip_counts.values(), color='red')
     plt.xlabel('IP Destination')
@@ -124,9 +162,23 @@ def create_graphs(source_ips, dest_ips):
     plt.savefig(os.path.join(RESULT_FOLDER, 'destination_ip_occurrences.png'))
     plt.clf()
 
+# Vérifier si les graphiques ont été correctement créés
+def check_graph_files():
+    source_graph = os.path.join(RESULT_FOLDER, 'source_ip_occurrences.png')
+    dest_graph = os.path.join(RESULT_FOLDER, 'destination_ip_occurrences.png')
+
+    if not os.path.exists(source_graph):
+        print("Erreur : Le graphique des IP Source n'a pas été créé.")
+    else:
+        print(f"Graphique des IP Source créé : {source_graph}")
+
+    if not os.path.exists(dest_graph):
+        print("Erreur : Le graphique des IP Destination n'a pas été créé.")
+    else:
+        print(f"Graphique des IP Destination créé : {dest_graph}")
+
 # Fonction pour générer le fichier HTML avec les résultats
 def generate_html(input_file, csv_file, vulnerabilities):
-    # Vérification si des vulnérabilités ont été détectées
     vuln_message = "<p>Aucune vulnérabilité détectée.</p>"
     if vulnerabilities:
         vuln_message = "<ul>" + "".join([f"<li>{vuln}</li>" for vuln in vulnerabilities]) + "</ul>"
@@ -216,32 +268,36 @@ def generate_html(input_file, csv_file, vulnerabilities):
             <div class="section">
                 <h2>Téléchargement des résultats</h2>
                 <p>Vous pouvez télécharger le fichier CSV contenant les données extraites : 
-                <a href="./results/{csv_file}" target="_blank">{csv_file}</a></p>
+                <a href="{csv_file}" target="_blank">{csv_file}</a></p>
             </div>
 
             <div class="section">
                 <h2>Graphiques</h2>
                 <h3>Graphique des IP Source</h3>
-                <img src="./results/source_ip_occurrences.png" alt="Graphique des IP Source">
+                <img src="source_ip_occurrences.png" alt="Graphique des IP Source">
                 
                 <h3>Graphique des IP Destination</h3>
-                <img src="./results/destination_ip_occurrences.png" alt="Graphique des IP Destination">
+                <img src="destination_ip_occurrences.png" alt="Graphique des IP Destination">
             </div>
         </div>
     </body>
     </html>
     """
 
-    # Sauvegarder le fichier HTML
     html_file_path = os.path.join(RESULT_FOLDER, 'analyse_trames.html')
     with open(html_file_path, 'w', encoding='utf-8') as html_file:
         html_file.write(html_content)
-    
     print(f"Fichier HTML généré avec succès : {html_file_path}")
 
-# Spécifier le fichier d'entrée
-input_file = 'fichier1000.txt'  # Remplacer par le chemin réel de votre fichier
-csv_file = 'trame.csv'  # Nom du fichier CSV de sortie
+# Système interactif pour demander à l'utilisateur le fichier à analyser
+print("Liste des fichiers disponibles dans le dossier courant :")
+files = [f for f in os.listdir('.') if os.path.isfile(f)]
+for i, file in enumerate(files):
+    print(f"{i + 1}. {file}")
+
+file_choice = int(input("Veuillez choisir un fichier à analyser (numéro) : "))
+input_file = files[file_choice - 1]
+csv_file = 'trame.csv'
 
 # Traiter le fichier et générer les résultats
 vulnerabilities = process_file(input_file, os.path.join(RESULT_FOLDER, csv_file))
